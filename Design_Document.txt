@@ -1,0 +1,220 @@
+# Explaining my design.
+
+In this task, I created 3 shell scripts which are:
+
+backup.sh : This script performs the backup
+
+restore.sh: This script restores the backups I made with the backup.sh
+
+backup_restore_lib.sh: This is a library script containing functions that are sourced in
+backup.sh and restore.sh as well as validating the inputs from the user for both the backup.sh 
+and restore.sh making sure that nothing goes wrong when they are used.
+
+######################################################################################
+First, lets dive into the backup.sh 
+
+So in the backup.sh I created it must have 4 inputs entered by the user, or it will not run.
+
+So these inputs specified in the backup.sh were :
+
+<Directory_to_back_up> <Destination_dir_to_store_backup> <Encryption_key> <Days>
+
+so this backup.sh will only backup files that were modified in the last number of days
+that is specified, and then it will put the names of the main directories that these
+files exists in with the date of backup in a tar file, and then encrypt that tar file, 
+after that all of the tar files will be combined into one final tar file which will
+also be encrypted.
+
+How the backup function exactly works in the specific order of the script I wrote:
+
+1) A date variable is made which will have the current date time in the format of
+   2024-11-30_10-50-47 (year-months-day_hour-minute-second) also we will create a 
+   secret file that will be stored in the backup directory which we will use later
+   in the restore script.
+
+2) Creating the date directory inside the destination directory that the user will
+   specify as an input, which will include at the end the final tar file with
+   with all the backedup files combined in the format of .tgz.gpg
+   (EX: User entered the dest_dir=backup, what will happen is /backup/date_taken_when_b
+    acking_up_was_made, for example backup/2024-10-2_5-50-45 and so on, each time a
+    backup is made in the same dest_dir, another date dir will be added inside and so
+    on, and each date dir has its own backup in, so when we make the restore, we will
+    specify exactly which date we would like to restore to and inside that date 
+    directory there will be the final combined tar file for example All_backup.tgz.gpg
+    which includes all the individual tarred files from each directory had any changes
+    its files in written in the format be <original directory name>_<date>.tgz.gpg)
+
+3) Looping over the source directory the user provided that they want to be backedup
+
+4) Checking if it is a directory or not to only loop over directories inside that
+   source directory.
+
+5) Then we get the basename only for the specified directory without its full path
+
+6) Making the first if statement to check first if any of these directories had any 
+   files modified in them, in order to create directory names only that had any 
+   changes of files modified in, without that if statement a directory will be created
+   followed by the date of backup for all directories in the source directory, even it
+   did not have any modifications in them. (EX: our source directory the user wants to
+   back up is /user, inside that /user there are 4 directories, dir1 dir2 dir3 dir4
+   and inside dir1 and dir2 only had files modified in them, dir3 and dir4 did not have
+   any files modified in them, so what will be created is dir1_date and dir2_date, 
+   without that if statement, what will be created is dir1_date dir2_date dir3_date and
+   dir4_date which we do not want, and if we try to see what is inside them, we will 
+   see that dir3_date and dir4_date are empty, since nothing was changed in them to 
+   be backedup inside them, this if statement will help us only create dir with modifications in only)
+
+7) For each directory found with modifications happened in files in them, a name of the
+   directory right under the source directory will be created followed by date.
+   (EX: Source directory entered by user has 4 directories in it, dir1 dir2 dir3 dir4
+    and inside dir1 there are 2 directories, dir1_0 and dir1_1, inside dir1_0 is the 
+    file that got modified, so the dir name that will be created will not be dir1_0
+    but the main directory right under the parent directory, which will be
+    dir1_DATE and inside it will then be dir1_0 only not dir1_1 since no changes
+    happened inside the dir1_1, and inside dir1_0 will be the modified file)
+
+8) We will then find the files that were modified in the last number of days, 
+   and the number of days will be specified by the user
+
+9)  After we find what files were modified, and made the directories_date each 
+    including files that were modified in them the last n days, we will then create
+    tar files for each one and then encrypt them with the gpg command and then delete
+    the unencrypted tar files so what will only remain is something like this:
+    (EX: dir1_date.tgz.gpg and so on)
+
+10) We will then group all of these tar files into one final tar file and then tar it 
+    and encrypt it as well (We will be using that file for the restore)
+
+11) We will then remove the uncompressed combined tar.gz file.
+
+######################################################################################
+For the restore parameters for the backup.sh:
+
+1) Making sure that the user entered 4 parameters exactly not more or less.
+   [ $# -ne 4 ] --->  "$#" means the total input the user entered instead of 
+   creating the variables they entered one by one.
+
+2) If the user entered a source directory that does not exist then it will output a 
+   message saying that the source directory does not exist
+
+3) If the user entered a destination directory that does not exist also the same will
+   happen.
+######################################################################################
+
+Secondly, lets dive into the restore.sh
+
+This restore.sh script will take from the user 3 inputs that must be entered correctly which are:
+<Directory_we_will_store_backup_from/DATEOFBACKUP> <Restore_directory> <Decryption_key>
+
+This will access the backup directory mentioned by the user, it will see the final tar file
+that we created with the backup directory. 
+
+Now I will explain exactly what does the restore function created in the
+backup_restore_lib.sh does in details.
+
+Lets say we have the combined tarred file created by the backup in a specific date
+directory that we want to restore.
+
+We will call that tar file including all backup files combined All_backups
+
+This All_backups will be backed up in a DATE directory created at the specifc time the 
+backup was taken.
+
+What will happen is the following:
+
+1) It will create a TEMP_DIR inside the restore directory
+
+2) It will enter the specified DATE directory inside the backup directory and will see that a file called
+   All_backups.tgz.gpg exists
+
+3) It will decrypt that file using gpg so it will be All_backups.tgz
+
+4) In order to decrypt that file and get the output as All_backups.tgz I created a 
+   variable which will take the name of the All_backup.tgz.gpg I did that using ls
+   command to output the file name and then be stored in a variable called mytarfile
+
+5) Then in order to remove the .gpg at the end of the file name so it will be only
+   All_backups.tgz which I needed to use in the gpg decrypt command, I did this command
+   "${mytarfile%.gpg}" which will remove the .gpg at the end so the output will be
+   All_backups.tgz only which we will be using in the gpg command as an output for
+ the All_backups.tgz.gpg (EX: gpg decrypt... -o "All_backups.tgz" "All_backups.tgz.gpg)
+
+6) Now since we decrypted the file we will now extract the files in it using tar
+   command (EX: tar -xzvf All_backups.tgz) and then delete the All_backups.tgz file
+
+7) Now we will have all of the files that were inside the All_backups.tgz in the
+   directory in the .tgz.gpg format along with the All_backup.tgz.gpg file
+   ( EX output: file1.tgz.gpg file2.tgz.gpg file3.tgz.gpg All_backup.tgz.gpg)
+
+9) It will then loop all over the files inside this directory
+
+10) We will then get the basename only of the files without their full path and store
+    it inside a variable as we will need it in the decryption
+
+11) An if condition is made inside the for loop to ignore the file
+    All_backups.tgz.gpg that is still in the directory to not have multiple
+    deduplications when decrypting.
+
+12) We will then get the filename without the .gpg extension as we did above for the
+    gpg we will make when decrypting these files.
+
+13) We will start decrypting the files file by file using the for loop, and in the gpg
+   command we made we stated that the output of the decrypted files will be sent under 
+   the temp directory inside the restore_dir that we created earlier.
+
+14) We will then delete each encrypted file that its decrypted value was sent to the
+    temp directory from the backup directory, so that the only file that remains in it   
+    is the All_backups.tgz.gpg, in case we would like to restore it again any other 
+    time, it will be easily restored again without any complications.
+  (EX: we have file1.tgz.gpg, after the gpg command, its output which will be file1.tgz  
+   will be sent under the temp directory, and then what will remain in the backup
+    directory is the file1.tgz.gpg which we do not need any more so we will remove it)
+
+15) We will then loop over all the files in the temp directory, and untar and unzip
+    them with the tar -xzf command and the destination will be the main restore_dir not the temp one.
+#######################################################################################
+
+I also made validations for the input that will be taken from the user in case any 
+thing goes wrong or any error occurs based on my assumptions, so that the user would beguided.
+
+That was in the validate_restore_params
+
+So let me explain what exactly the validate_restore_params function does:
+
+1) First of all, the user can sometimes forget to enter the specific date they want to
+   restore from the backup directory or maybe they will enter a backup directory that
+   does not have valid backups in or maybe it is not backed up yet, so in order to 
+   solve that and assist the user with what they should do, I arrived to a solution 
+   to create a hidden file called backup_meta that will me made when running the backup 
+   function, inside the Date_dir which will be inside the backup dir, so that file must  
+    be there in order for the restore to work, if the file is not there that means that
+   the user might be looking at a directory not backed up by my backup script or if 
+   they are searching in a wrong place, or maybe they did not specify which date
+   exactly to restore the backup from and these errors can happen a lot so by 
+   creating the hidden file inside the backup date dir, all of that is resolved. 
+   If the hidden file does not exist an error will appear for the user that tells them  
+   that this is not a valid backup, and will echo the correct usage from the script, 
+   also will inform the user about having to specify a date if not specified.
+
+2) Then this condition: [ $# -ne 3 ], "$#" means the total number of inputs written
+   by the user, instead of having to write all the variables.
+   So what this does is if the user entered less or more parameters than 3 then this
+   will be triggered, telling the user to enter the correct number of param, also the
+   correct usage will be printed for them.
+
+3) If the user entered a directory that does not exist, it will print a message that 
+   says the directory does not exist, also same thing for the restore directory the
+   backup will be restored in.
+#######################################################################################
+
+Finally , I created a cron job to work each day at 10PM to run that backup script:
+
+Using the cron -e command to open the file to add the backup script in, then adding 
+this in the cron -e file:
+
+# This will make my script run everyday day at 10PM.
+
+0 22 * * * /home/mahmoud/mytask/backup.sh <Directory_to_backup> <Dest_dir>
+           <Ecryption_key> <files_modified_in_number_of_days>
+#######################################################################################
+
